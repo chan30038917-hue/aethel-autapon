@@ -1,0 +1,6 @@
+node_modules/
+mandatos-agentes.json
+cuentas-agentes.json
+tracking.json
+*.log
+.env
