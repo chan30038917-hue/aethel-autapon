@@ -52,4 +52,4 @@ Fee de Mandate (0.5% o 0.03 MON por transacción).
 
 ## Licencia
 
-MIT
+BSL 1.1
