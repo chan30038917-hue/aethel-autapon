@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 const PORT = 3000;
 const RPC_URL = "https://rpc.monad.xyz";
 const CHAIN_ID = 143;
-const FEE_SHARE = 0.5;
+const FEE_SHARE = 0.1;
 
 const provider = new JsonRpcProvider(RPC_URL, CHAIN_ID);
 const mandatos = JSON.parse(readFileSync("mandatos-agentes.json", "utf8"));
