@@ -30,5 +30,4 @@ console.log("");
 console.log("TOTAL:");
 console.log("  Transacciones: " + totalTxs);
 console.log("  Fee total: " + totalFee.toFixed(4) + " MON");
-console.log("  Fee compartido (50%): " + totalCompartido.toFixed(4) + " MON");
 console.log("  Equivalente USD @$1.00: $" + totalCompartido.toFixed(2));
