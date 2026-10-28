@@ -8,7 +8,7 @@ import { readFileSync } from "fs";
 
 const RPC_URL = "https://rpc.monad.xyz";
 const CHAIN_ID = 143;
-const RATE_LIMIT_RPS = 40;
+const RATE_LIMIT_RPS = 20;
 const MAX_REINTENTOS = 3;
 
 class RateLimiter {
