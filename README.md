@@ -21,7 +21,7 @@ Usa Mandate SDK para los límites de gasto on-chain.
 1. Validación previa: descarta intenciones inviables sin tocar la chain.
 2. Agrupación por agente: cada agente tiene su propia cola de nonces.
 3. Planificación de capas: cada capa tiene como máximo 1 pago por agente.
-4. Ejecución con rate limit: token bucket a 40 req/s + reintentos.
+4. Ejecución con rate limit: token bucket a 25 req/s + reintentos.
 5. Reporte: éxitos, fallos, tiempo, rango de bloques.
 
 ## Instalación
