@@ -42,7 +42,7 @@ GET /tracking/:apiKey
 
 ## Modelo de negocio
 
-Fee compartido: 50% del fee de Mandate (0.5% o 0.03 MON por transacción).
+Fee de Mandate (0.5% o 0.03 MON por transacción).
 
 | Empresas | Txs/día/empresa | Ingreso/mes (MON) |
 |----------|-----------------|-------------------|
