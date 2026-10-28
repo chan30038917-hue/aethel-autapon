@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 const PORT = 3000;
 const RPC_URL = "https://rpc.monad.xyz";
 const CHAIN_ID = 143;
-const FEE_SHARE = 0.1;
+const FEE_SHARE = 1.0;
 
 const provider = new JsonRpcProvider(RPC_URL, CHAIN_ID);
 const mandatos = JSON.parse(readFileSync("mandatos-agentes.json", "utf8"));
@@ -37,14 +37,26 @@ const agentes = mandatos.map(m => ({
   }),
 }));
 
-const rateLimiter = { tokens: 40, last: Date.now() };
+// Rate limiter corregido
+const RATE_LIMIT = 20;        // 20 req/s (por debajo del límite de 25 del RPC público)
+const BUCKET_SIZE = 20;       // máximo de tokens acumulables
+const rateLimiter = { tokens: BUCKET_SIZE, last: Date.now() };
+
 async function acquire() {
   while (true) {
     const now = Date.now();
-    rateLimiter.tokens = Math.min(40, rateLimiter.tokens + ((now - rateLimiter.last) / 1000) * 40);
+    const elapsed = (now - rateLimiter.last) / 1000;
     rateLimiter.last = now;
-    if (rateLimiter.tokens >= 1) { rateLimiter.tokens -= 1; return; }
-    await new Promise(r => setTimeout(r, 25));
+    rateLimiter.tokens = Math.min(
+      BUCKET_SIZE,
+      rateLimiter.tokens + elapsed * RATE_LIMIT
+    );
+    if (rateLimiter.tokens >= 1) {
+      rateLimiter.tokens -= 1;
+      return;
+    }
+    const waitMs = Math.ceil(((1 - rateLimiter.tokens) / RATE_LIMIT) * 1000);
+    await new Promise(r => setTimeout(r, waitMs));
   }
 }
 
@@ -98,7 +110,7 @@ async function ejecutarIntenciones(intenciones, apiKey) {
             return { ok: true, agente: v.agente.agentId, tx: r.tx, bloque: receipt.blockNumber, fee: r.fee };
           } catch (e) {
             if (intento === 2) return { ok: false, agente: v.agente.agentId, error: e.message.slice(0, 80) };
-            await new Promise(r => setTimeout(r, Math.pow(2, intento) * 1000));
+             await new Promise(r => setTimeout(r, Math.pow(2, intento) * 1000));
           }
         }
       })
