@@ -1,15 +1,23 @@
 import { MandateSDK } from "@chan30/mandate-sdk";
-import { JsonRpcProvider } from "ethers";
+import { JsonRpcProvider, Contract, Wallet, formatEther, keccak256, toUtf8Bytes, parseEther } from "ethers";
 import { readFileSync } from "fs";
 
 // ============================================================
-// COMPILADOR DAG PARA AETHEL-AUTAPON
+// COMPILADOR DAG PARA AETHEL-AUTAPON (flujo separado)
 // ============================================================
 
 const RPC_URL = "https://rpc.monad.xyz";
 const CHAIN_ID = 143;
 const RATE_LIMIT_RPS = 20;
 const MAX_REINTENTOS = 3;
+
+const AGENT_YARBOX_ABI = [
+  "function commitIntent(bytes32 _intentHash, bytes32 _conditionHash, bytes32 _mandateId, uint256 _maxAmount, uint64 _erc8004AgentId) external returns (uint256)",
+  "function getMaxAmount(uint256 _id) external view returns (uint256)",
+  "function getReceipt(uint256 _id) external view returns (address, uint64, bytes32, bytes32, bytes32, uint256, bytes32, bytes32, uint256, bool, bool)"
+];
+
+const AGENT_YARBOX_ADDRESS = process.env.AGENT_YARBOX || "0x4D0D993e6FF19279dF0E69d9cd9cC946480973dC";
 
 class RateLimiter {
   constructor(maxPerSecond) {
@@ -39,12 +47,15 @@ class RateLimiter {
 const rateLimiter = new RateLimiter(RATE_LIMIT_RPS);
 
 const provider = new JsonRpcProvider(RPC_URL, CHAIN_ID);
+const agentYarbox = new Contract(AGENT_YARBOX_ADDRESS, AGENT_YARBOX_ABI, provider);
+
 const mandatos = JSON.parse(readFileSync("mandatos-agentes.json", "utf8"));
 
 const agentes = mandatos.map(m => ({
   agentId: m.agentId,
   address: m.address,
   mandateId: m.mandateId,
+  privateKey: m.privateKey,
   passkey: {
     privateKey: new Uint8Array(m.passkey.privateKey),
     publicKey: new Uint8Array(m.passkey.publicKey),
@@ -78,12 +89,28 @@ async function validarIntenciones(intenciones) {
         const feeBig = BigInt(Math.floor(parseFloat(fee) * 1e18));
         const netoValido = monto > feeBig;
 
+        await rateLimiter.acquire();
+        const balance = await provider.getBalance(int.agente.address);
+        const balanceMON = parseFloat(formatEther(balance));
+        const amountNum = parseFloat(int.amount);
+        const gasReserve = 5;
+        const balanceOk = balanceMON >= (amountNum + gasReserve);
+
+        if (!balanceOk) {
+          return {
+            intencion: int,
+            valido: false,
+            error: `balance insuficiente: ${balanceMON} MON`
+          };
+        }
+
         return {
           intencion: int,
           fee,
           activo,
           netoValido,
-          valido: activo && netoValido,
+          balanceOk,
+          valido: activo && netoValido && balanceOk,
         };
       } catch (e) {
         return {
@@ -162,9 +189,9 @@ function planificarCapas(porAgente) {
   return capas;
 }
 
-// --- FASE 4: Ejecución con rate limit y reintentos ---
+// --- FASE 4: Ejecución con flujo separado ---
 async function ejecutarCapas(capas) {
-  console.log("\n[FASE 4] Ejecutando capas...");
+  console.log("\n[FASE 4] Ejecutando capas (flujo separado)...");
 
   const t0 = Date.now();
   const resultados = [];
@@ -173,8 +200,57 @@ async function ejecutarCapas(capas) {
     const capa = capas[i];
     process.stdout.write("  Capa " + (i + 1) + "/" + capas.length + ": ");
 
-    const resultadosCapa = await Promise.all(
+    // PASO 1: Commitear todas las intenciones de la capa
+    const commits = await Promise.all(
       capa.map(async (v) => {
+        try {
+          const signer = new Wallet(v.intencion.agente.privateKey, provider);
+          const agentYarboxConSigner = agentYarbox.connect(signer);
+
+          const intentHash = keccak256(toUtf8Bytes("intent-" + Date.now() + "-" + v.intencion.agente.agentId));
+          const conditionHash = keccak256(toUtf8Bytes("condition-" + v.intencion.agente.agentId));
+          const mandateIdBytes = v.intencion.agente.mandateId;
+          const maxAmount = parseEther(v.intencion.amount);
+
+          await rateLimiter.acquire();
+          const txCommit = await agentYarboxConSigner.commitIntent(
+            intentHash,
+            conditionHash,
+            mandateIdBytes,
+            maxAmount,
+            0
+          );
+          const receiptCommit = await txCommit.wait();
+
+          if (receiptCommit.logs.length === 0) {
+            return { ok: false, v, error: "Sin logs en commitIntent" };
+          }
+          const intentId = receiptCommit.logs[0].args[0];
+
+          return { ok: true, v, intentId };
+        } catch (e) {
+          return { ok: false, v, error: e.message.slice(0, 80) };
+        }
+      })
+    );
+
+    // Mostrar errores de commit
+    commits.forEach(c => {
+      if (!c.ok) {
+        console.log("\n  Error en commit para " + c.v.intencion.agente.agentId + ": " + c.error);
+      }
+    });
+
+    const commitsOk = commits.filter(c => c.ok);
+    process.stdout.write("commits: " + commitsOk.length + "/" + capa.length + " ");
+
+    // Esperar para que la red actualice el saldo
+    await new Promise(r => setTimeout(r, 3000));
+
+    // PASO 2: Pagar todas las intenciones commiteadas
+    const pagos = await Promise.all(
+      commitsOk.map(async (c) => {
+        const v = c.v;
         let ultimoError = null;
 
         for (let intento = 0; intento < MAX_REINTENTOS; intento++) {
@@ -185,10 +261,30 @@ async function ejecutarCapas(capas) {
               passkey: v.intencion.agente.passkey,
               amount: v.intencion.amount,
               recipient: v.intencion.recipient,
+              gasLimit: 500000,
             });
 
             await rateLimiter.acquire();
             const receipt = await provider.waitForTransaction(r.tx);
+
+            let tiquete = null;
+            try {
+              await rateLimiter.acquire();
+              const rec = await agentYarbox.getReceipt(c.intentId);
+              tiquete = {
+                intentId: c.intentId.toString(),
+                agent: rec[0],
+                mandateId: rec[4],
+                maxAmount: rec[5].toString(),
+                paymentNonce: rec[6],
+                resultHash: rec[7],
+                timestamp: rec[8].toString(),
+                settled: rec[9],
+                inconsistent: rec[10],
+              };
+            } catch (e) {
+              tiquete = { error: e.message.slice(0, 80) };
+            }
 
             return {
               ok: true,
@@ -197,13 +293,13 @@ async function ejecutarCapas(capas) {
               bloque: receipt.blockNumber,
               fee: r.fee,
               netAmount: r.netAmount,
+              intentId: c.intentId.toString(),
+              tiquete,
             };
           } catch (e) {
             ultimoError = e.message.slice(0, 80);
-
             if (ultimoError.includes("-32007") || ultimoError.includes("50/second")) {
               const backoff = Math.pow(2, intento) * 1000;
-              process.stdout.write("\n    Reintento " + (intento + 1) + "/" + MAX_REINTENTOS + " para " + v.intencion.agente.agentId + " en " + backoff + "ms\n  ");
               await new Promise(r => setTimeout(r, backoff));
             } else {
               break;
@@ -219,10 +315,17 @@ async function ejecutarCapas(capas) {
       })
     );
 
-    const ok = resultadosCapa.filter(r => r.ok).length;
-    process.stdout.write(ok + "/" + capa.length + " OK\n");
+    // Mostrar errores de pago
+    pagos.forEach(p => {
+      if (!p.ok) {
+        console.log("\n  Error en pago para " + p.agente + ": " + p.error);
+      }
+    });
 
-    resultados.push(...resultadosCapa);
+    const ok = pagos.filter(r => r.ok).length;
+    process.stdout.write("pagos: " + ok + "/" + capa.length + " OK\n");
+
+    resultados.push(...pagos);
   }
 
   const t1 = Date.now();
@@ -233,13 +336,14 @@ async function ejecutarCapas(capas) {
 // MAIN
 // ============================================================
 
-console.log("=== COMPILADOR DAG AETHEL-AUTAPON ===");
+console.log("=== COMPILADOR DAG AETHEL-AUTAPON (flujo separado) ===");
 console.log("Agentes disponibles: " + agentes.length);
 console.log("Rate limit: " + RATE_LIMIT_RPS + " req/s");
 console.log("Reintentos por pago: " + MAX_REINTENTOS);
+console.log("AgentYarbox: " + AGENT_YARBOX_ADDRESS);
 
 const PAGOS_POR_AGENTE = 3;
-const RECIPIENT = "0x0000000000000000000000000000000000000001";
+const RECIPIENT = "0xF6805F61820A860db4B7462Bc9940793fC8ed22A";
 
 const intenciones = [];
 for (const agente of agentes) {
@@ -292,6 +396,21 @@ if (fallidos.length > 0) {
   console.log("\nFallos:");
   fallidos.forEach(f => {
     console.log("  " + f.agente + ": " + f.error);
+  });
+}
+
+if (exitosos.length > 0) {
+  console.log("\n=== TIQUETES DE PAGO ===");
+  exitosos.forEach(r => {
+    if (r.tiquete && !r.tiquete.error) {
+      console.log("\nIntent ID: " + r.tiquete.intentId);
+      console.log("  Agente: " + r.tiquete.agent);
+      console.log("  Mandato: " + r.tiquete.mandateId);
+      console.log("  Monto máximo: " + r.tiquete.maxAmount);
+      console.log("  Payment Nonce: " + r.tiquete.paymentNonce);
+      console.log("  Liquidado: " + r.tiquete.settled);
+      console.log("  Inconsistente: " + r.tiquete.inconsistent);
+    }
   });
 }
 
