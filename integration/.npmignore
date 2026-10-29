@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+
+# Datos sensibles (NUNCA subir a npm)
+mandatos-agentes.json
+cuentas-agentes.json
+tracking.json
+mandatos-agentes-BACKUP.json
+cuentas-agentes-BACKUP.json
+*.log
+
+# Prototipos y experimentos (no son parte del paquete)
+prototipo-*.mjs
+experimento-*.mjs
+medir-gas.mjs
+estimar-gas.mjs
+test-*.mjs
+verificar-*.mjs
+registrar-*.mjs
+reforzar-*.mjs
+refundir-*.mjs
+fondear-*.mjs
+generar-*.mjs
+pagar.mjs
+reforzar-agente-01.mjs
+
+# Repositorio externo
+parallel_evm/
+
+# Archivos de configuración
+.gitignore
+.git/
