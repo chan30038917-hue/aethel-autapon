@@ -4,3 +4,4 @@ cuentas-agentes.json
 tracking.json
 *.log
 .env
+integration/parallel_evm/
