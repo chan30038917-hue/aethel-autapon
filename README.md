@@ -53,3 +53,28 @@ Fee de Mandate (0.5% o 0.03 MON por transacción).
 ## Licencia
 
 MIT
+
+
+---
+
+## Configuración para producción
+
+AETHEL-AUTAPON está diseñado para ser instalado y ejecutado por cada cliente en su propio entorno. Cada instancia es independiente.
+
+### Variables de entorno
+
+| Variable | Default | Descripción |
+|---|---|---|
+| RPC_URL | https://rpc.monad.xyz | Endpoint RPC de Monad. Para producción, usa un RPC de pago (Alchemy, QuickNode) con mayor límite. |
+| RATE_LIMIT_RPS | 20 | Peticiones por segundo al RPC. Baja este valor si usas el RPC público (25 rps). |
+| CHAIN_ID | 143 | Chain ID de Monad Mainnet (143) o Testnet (10143). |
+
+### Ejemplo de uso en producción
+
+    RPC_URL="https://monad-mainnet.g.alchemy.com/v2/TU_API_KEY"     RATE_LIMIT_RPS=50     node dag-compiler.mjs
+
+### Modo dry-run
+
+Para probar sin gastar MON:
+
+    node dag-compiler.mjs --dry-run
