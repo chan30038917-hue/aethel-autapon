@@ -1,12 +1,22 @@
 {
   "name": "aethel-autapon",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Compilador DAG para coordinación de agentes autónomos en Monad",
   "main": "dag-compiler.mjs",
   "type": "module",
-  "keywords": ["monad", "dag", "agents", "mandate", "parallel-evm"],
+  "keywords": [
+    "monad",
+    "dag",
+    "agents",
+    "mandate",
+    "parallel-evm"
+  ],
   "author": "chan30038917-hue",
   "license": "MIT",
+  "files": [
+    "dag-compiler.mjs",
+    "*.mjs"
+  ],
   "dependencies": {
     "@chan30/mandate-sdk": "github:chan30038917-hue/mandate-sdk",
     "ethers": "^6.0.0"
