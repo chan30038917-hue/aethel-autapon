@@ -5,3 +5,4 @@ tracking.json
 *.log
 .env
 integration/parallel_evm/
+integration/*.bak
