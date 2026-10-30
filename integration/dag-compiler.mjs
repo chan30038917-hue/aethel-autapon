@@ -6,15 +6,20 @@ import { readFileSync } from "fs";
 // COMPILADOR DAG PARA AETHEL-AUTAPON (flujo separado)
 // ============================================================
 
-const RPC_URL = "https://rpc.monad.xyz";
-const CHAIN_ID = 143;
-const RATE_LIMIT_RPS = 20;
+const DRY_RUN = process.argv.includes("--dry-run");
+const RPC_URL = process.env.RPC_URL || "https://rpc.monad.xyz";
+const CHAIN_ID = parseInt(process.env.CHAIN_ID) || 143;
+const RATE_LIMIT_RPS = parseInt(process.env.RATE_LIMIT_RPS) || 20;
 const MAX_REINTENTOS = 3;
 
 const AGENT_YARBOX_ABI = [
   "function commitIntent(bytes32 _intentHash, bytes32 _conditionHash, bytes32 _mandateId, uint256 _maxAmount, uint64 _erc8004AgentId) external returns (uint256)",
+  "function settleIntent(uint256 _id, bytes32 _paymentNonce, bytes32 _resultHash) external",
   "function getMaxAmount(uint256 _id) external view returns (uint256)",
-  "function getReceipt(uint256 _id) external view returns (address, uint64, bytes32, bytes32, bytes32, uint256, bytes32, bytes32, uint256, bool, bool)"
+  "function getReceipt(uint256 _id) external view returns (address, uint64, bytes32, bytes32, bytes32, uint256, bytes32, bytes32, uint256, bool, bool)",
+  "event IntentCommitted(uint256 indexed id, address indexed agent, uint64 erc8004AgentId, bytes32 intentHash, bytes32 mandateId, uint256 maxAmount)",
+  "event IntentSettled(uint256 indexed id, bytes32 paymentNonce, bytes32 resultHash, uint256 timestamp)",
+  "event IntentInconsistent(uint256 indexed id, string reason)"
 ];
 
 const AGENT_YARBOX_ADDRESS = process.env.AGENT_YARBOX || "0x4D0D993e6FF19279dF0E69d9cd9cC946480973dC";
