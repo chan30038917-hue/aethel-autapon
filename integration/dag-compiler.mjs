@@ -247,7 +247,7 @@ async function ejecutarCapas(capas) {
     // Esperar para que la red actualice el saldo
     await new Promise(r => setTimeout(r, 3000));
 
-    // PASO 2: Pagar todas las intenciones commiteadas
+    // PASO 2: Pagar todas las intenciones commiteadas y liquidarlas en AgentYarbox
     const pagos = await Promise.all(
       commitsOk.map(async (c) => {
         const v = c.v;
@@ -263,6 +263,22 @@ async function ejecutarCapas(capas) {
               recipient: v.intencion.recipient,
               gasLimit: 500000,
             });
+
+            // --- NUEVO: Liquidar la intención en AgentYarbox ---
+            const paymentNonce = r.paymentNonce;
+            const resultHash = keccak256(toUtf8Bytes("result-" + r.tx));
+
+            const signer = new Wallet(v.intencion.agente.privateKey, provider);
+            const agentYarboxConSigner = agentYarbox.connect(signer);
+
+            await rateLimiter.acquire();
+            const txSettle = await agentYarboxConSigner.settleIntent(
+              c.intentId,
+              paymentNonce,
+              resultHash
+            );
+            await txSettle.wait();
+            // --- FIN NUEVO ---
 
             await rateLimiter.acquire();
             const receipt = await provider.waitForTransaction(r.tx);
