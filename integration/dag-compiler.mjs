@@ -49,6 +49,25 @@ class RateLimiter {
   }
 }
 
+
+
+function guardarEstadoDashboard(capas, capaActual, resultados, agenteActual = null) {
+  try {
+    const estado = {
+      timestamp: Date.now(),
+      capasTotales: capas.length,
+      capaActual,
+      agenteActual,
+      capas: capas.map((c, i) => ({
+        numero: i + 1,
+        pagos: c.map(p => p.intencion.agente.agentId),
+        estado: i < capaActual ? 'completada' : (i === capaActual ? 'en_progreso' : 'pendiente')
+      })),
+      resultados: resultados.map(r => ({ ok: r.ok, agente: r.agente }))
+    };
+    require('fs').writeFileSync('/home/usuariochan/agent-yarbox/explorer/web/dashboard-status.json', JSON.stringify(estado, null, 2));
+  } catch (e) {}
+}
 const rateLimiter = new RateLimiter(RATE_LIMIT_RPS);
 
 const provider = new JsonRpcProvider(RPC_URL, CHAIN_ID);
@@ -196,6 +215,8 @@ function planificarCapas(porAgente) {
 
 // --- FASE 4: Ejecución con flujo separado ---
 async function ejecutarCapas(capas) {
+  guardarEstadoDashboard(capas, 0, []); // Guardar estado inicial para el dashboard
+
   console.log("\n[FASE 4] Ejecutando capas (flujo separado)...");
 
   const t0 = Date.now();
@@ -204,6 +225,8 @@ async function ejecutarCapas(capas) {
   for (let i = 0; i < capas.length; i++) {
     const capa = capas[i];
     process.stdout.write("  Capa " + (i + 1) + "/" + capas.length + ": ");
+
+    guardarEstadoDashboard(capas, i, resultados);
 
     // PASO 1: Commitear todas las intenciones de la capa
     const commits = await Promise.all(
@@ -261,6 +284,8 @@ async function ejecutarCapas(capas) {
         for (let intento = 0; intento < MAX_REINTENTOS; intento++) {
           try {
             await rateLimiter.acquire();
+            guardarEstadoDashboard(capas, i, resultados, v.intencion.agente.agentId);
+            await new Promise(r => setTimeout(r, 500)); // Pausa para que se vea en el dashboard
             const r = await v.intencion.agente.sdk.pay({
               mandateId: v.intencion.agente.mandateId,
               passkey: v.intencion.agente.passkey,

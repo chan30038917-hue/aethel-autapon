@@ -1,6 +1,6 @@
 {
   "name": "aethel-autapon",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Compilador DAG para coordinación de agentes autónomos en Monad",
   "main": "dag-compiler.mjs",
   "type": "module",
